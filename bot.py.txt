@@ -1,0 +1,147 @@
+import os
+import threading
+from flask import Flask
+import telebot
+from telebot.types import InputMediaPhoto, InlineKeyboardMarkup, InlineKeyboardButton
+
+# Environment variables (Set these on Koyeb)
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8995143661:AAHV5-RxnMb_N9wtG0mzCVWt40ZMAI4jSWw")
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "5672552286"))  # Your Telegram User ID
+CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "https://t.me/CreamyPop_bot")
+
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
+
+# ------------------- FLASK KEEP-ALIVE SERVER -------------------
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is active and running 24/7!", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
+
+# ------------------- TELEGRAM BOT HANDLERS -------------------
+
+# 1. Start / Hi / Hello Handler
+@bot.message_handler(commands=['start'])
+@bot.message_handler(func=lambda msg: msg.text and msg.text.lower() in ['hello', 'hi', 'start bot'])
+def send_welcome(message):
+    # Step 2: Welcome message
+    bot.reply_to(message, "Welcome to CreamyPop the only trusted channel for exclusive premium vidoes 🔥")
+    
+    # Step 3 & 4: Send 3 sample images with caption and payment button
+    caption_text = (
+        "❤️‍🔥 **Welcome to Exclusive Premium Videos!**\n\n"
+        "🚀 Unlock unlimited access to premium members-only content, private channels, "
+        "and daily updates—all safely organized in one place.\n\n"
+        "⚡️ Tap the button below to unlock your access or check your subscription status."
+    )
+    
+    keyboard = InlineKeyboardMarkup()
+    pay_btn = InlineKeyboardButton(
+        text="Click to pay rs 129 and send screenshot to become our member",
+        callback_data="show_payment"
+    )
+    keyboard.add(pay_btn)
+
+    # Local sample image files present in your directory
+    try:
+        media = [
+            InputMediaPhoto(open("sample1.jpg", "rb")),
+            InputMediaPhoto(open("sample2.jpg", "rb")),
+            InputMediaPhoto(open("sample3.jpg", "rb"), caption=caption_text)
+        ]
+        bot.send_media_group(message.chat.id, media)
+        bot.send_message(message.chat.id, "Click below to proceed with payment:", reply_markup=keyboard)
+    except Exception as e:
+        # Fallback text if sample images are missing locally
+        bot.send_message(
+            message.chat.id, 
+            caption_text, 
+            reply_markup=keyboard
+        )
+
+# Callback for Payment Button -> Sends QR Code Photo
+@bot.callback_query_handler(func=lambda call: call.data == "show_payment")
+def send_qr_code(call):
+    bot.answer_callback_query(call.id)
+    payment_instruction = (
+        "💳 **Payment Details:**\n\n"
+        "1. Scan the QR code below to pay **₹129**.\n"
+        "2. After payment, **send the payment screenshot here** as an image.\n"
+        "3. Once verified, you will receive the private channel link automatically!"
+    )
+    
+    try:
+        with open("qr_code.jpg", "rb") as qr:
+            bot.send_photo(call.message.chat.id, photo=qr, caption=payment_instruction)
+    except Exception as e:
+        bot.send_message(call.message.chat.id, payment_instruction + "\n\n(Please send screenshot after payment)")
+
+# Step 5 & 6: User sends Payment Screenshot
+@bot.message_handler(content_types=['photo'])
+def handle_screenshot(message):
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name or "User"
+    photo_file_id = message.photo[-1].file_id
+
+    # Reply to User
+    bot.reply_to(message, "⏳ Please wait for approval so I can manually verify your payment.")
+
+    # Forward to Admin with Approve / Reject buttons
+    admin_markup = InlineKeyboardMarkup()
+    approve_btn = InlineKeyboardButton("✅ Approve", callback_data=f"approve_{user_id}")
+    reject_btn = InlineKeyboardButton("❌ Reject", callback_data=f"reject_{user_id}")
+    admin_markup.add(approve_btn, reject_btn)
+
+    bot.send_photo(
+        ADMIN_ID, 
+        photo=photo_file_id, 
+        caption=f"📩 **New Payment Screenshot!**\n\nUser: {user_name}\nID: `{user_id}`",
+        reply_markup=admin_markup
+    )
+
+# Step 7: Admin Approval / Rejection Callback
+@bot.callback_query_handler(func=lambda call: call.data.startswith("approve_") or call.data.startswith("reject_"))
+def process_admin_decision(call):
+    action, target_user_id = call.data.split("_")
+    target_user_id = int(target_user_id)
+
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "Unauthorized!", show_alert=True)
+        return
+
+    if action == "approve":
+        # Send channel link to user
+        bot.send_message(
+            target_user_id,
+            f"🎉 **Payment Verified!**\n\nHere is your exclusive access link:\n{CHANNEL_LINK}"
+        )
+        bot.edit_message_caption(
+            chat_id=ADMIN_ID,
+            message_id=call.message.message_id,
+            caption=call.message.caption + "\n\n✅ **APPROVED**"
+        )
+        bot.answer_callback_query(call.id, "Approved and link sent.")
+    
+    elif action == "reject":
+        bot.send_message(
+            target_user_id,
+            "❌ **Payment Verification Failed.**\nPlease check your screenshot or contact support."
+        )
+        bot.edit_message_caption(
+            chat_id=ADMIN_ID,
+            message_id=call.message.message_id,
+            caption=call.message.caption + "\n\n❌ **REJECTED**"
+        )
+        bot.answer_callback_query(call.id, "Rejected.")
+
+# ------------------- STARTUP -------------------
+if __name__ == "__main__":
+    # Start web server in background thread for health checks / keep-alive
+    threading.Thread(target=run_flask, daemon=True).start()
+    
+    # Run Telegram bot non-stop (handles multiple incoming messages concurrently)
+    bot.infinity_polling(timeout=20, long_polling_timeout=10)
