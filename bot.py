@@ -71,7 +71,8 @@ def send_qr_code(call):
         "💳 **Payment Details:**\n\n"
         "1. Scan the QR code below to pay **₹129**.\n"
         "2. After payment, **send the payment screenshot here** as an image.\n"
-        "3. Once verified, you will receive the private channel link automatically!"
+        "3. Send your name along with the screenshot or in chat.\n"
+        "4. Once verified, you will receive the private channel link automatically!"
     )
     
     try:
@@ -87,8 +88,33 @@ def handle_screenshot(message):
     user_name = message.from_user.first_name or "User"
     photo_file_id = message.photo[-1].file_id
 
+    caption = message.caption.strip() if message.caption else ""
+    
+    # If the user included a caption with the photo
+    if caption:
+        if len(caption.split()) > 30:
+            return
+        forward_to_admin(message.chat.id, user_id, user_name, photo_file_id, caption)
+    else:
+        # If no caption, ask for their name in normal chat
+        msg = bot.reply_to(message, "Please enter your name:")
+        bot.register_next_step_handler(msg, receive_name_text, user_id, user_name, photo_file_id)
+
+def receive_name_text(message, user_id, user_name, photo_file_id):
+    if not message.text:
+        msg = bot.reply_to(message, "Please enter your name:")
+        bot.register_next_step_handler(msg, receive_name_text, user_id, user_name, photo_file_id)
+        return
+
+    provided_name = message.text.strip()
+    if len(provided_name.split()) > 30:
+        return
+
+    forward_to_admin(message.chat.id, user_id, user_name, photo_file_id, provided_name)
+
+def forward_to_admin(chat_id, user_id, user_name, photo_file_id, provided_name):
     # Reply to User
-    bot.reply_to(message, "⏳ Please wait for approval so I can manually verify your payment.")
+    bot.send_message(chat_id, "⏳ Please wait for approval so I can manually verify your payment.")
 
     # Forward to Admin with Approve / Reject buttons
     admin_markup = InlineKeyboardMarkup()
@@ -99,7 +125,7 @@ def handle_screenshot(message):
     bot.send_photo(
         ADMIN_ID, 
         photo=photo_file_id, 
-        caption=f"📩 **New Payment Screenshot!**\n\nUser: {user_name}\nID: `{user_id}`",
+        caption=f"📩 **New Payment Screenshot!**\n\nUser: {user_name}\nProvided Name: {provided_name}\nID: `{user_id}`",
         reply_markup=admin_markup
     )
 
