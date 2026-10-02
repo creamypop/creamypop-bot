@@ -7,7 +7,7 @@ from telebot.types import InputMediaPhoto, InlineKeyboardMarkup, InlineKeyboardB
 # Environment variables (Set these on Koyeb)
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8995143661:AAHV5-RxnMb_N9wtG0mzCVWt40ZMAI4jSWw")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "5672552286"))  # Your Telegram User ID
-CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "https://t.me/creamypop099")
+CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "https://t.me/+ZZq1Rko6bns2ODVl")
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
